@@ -2121,6 +2121,18 @@ func (f ForkSettings) Resolve(parentSandboxed bool) ResolvedForkPlan {
 type StatusSettings struct {
 	// Reserved for future status detection settings.
 	// Control mode pipes are always enabled (no longer configurable).
+
+	// ShellRunningIndicator promotes "shell" tool sessions from idle to
+	// running when the pane's foreground command is a genuine non-interactive
+	// process (e.g. "node" from `yarn dev`, "java" from `mvn spring-boot:run`).
+	// Opt-in (default false): the interactive-program denylist is necessarily
+	// incomplete, so a shell sitting at a psql/REPL/fzf prompt would otherwise
+	// read "running" while the user is idle. Users who want dev-server
+	// detection accept that tradeoff explicitly:
+	//
+	//	[status]
+	//	shell_running_indicator = true
+	ShellRunningIndicator bool `toml:"shell_running_indicator"`
 }
 
 // MaintenanceSettings controls the automatic maintenance worker

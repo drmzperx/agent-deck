@@ -3513,12 +3513,30 @@ func hookFastPathFreshnessForTool(tool, hookStatus string) time.Duration {
 // (TUI backgroundStatusUpdate / Web refreshStatuses / CLI status refresh). When
 // the cache is cold the lookup misses and this returns false, preserving the
 // historical "shell maps to idle" behavior. Caller must hold i.mu.
+//
+// The feature is opt-in via [status] shell_running_indicator (default false):
+// the interactive-program denylist cannot be complete, so without the flag a
+// shell sitting at a psql/REPL/fzf prompt would flip everyone's historical
+// "shell → idle" default to running.
+//
+// Staleness guards — only fresh pane info may promote idle→running:
+//   - GetCachedPaneInfoSnapshot enforces the cache-wide 4s TTL (2 ticks).
+//   - A dead pane (#{pane_dead}) means the command already exited.
+//   - A snapshot taken before this instance's last start describes a previous
+//     same-name session (kill+recreate within the TTL), not this one.
 func (i *Instance) shellForegroundRunning() bool {
 	if i.tmuxSession == nil {
 		return false
 	}
-	paneInfo, ok := tmux.GetCachedPaneInfo(i.tmuxSession.Name)
-	if !ok || paneInfo.CurrentCommand == "" {
+	cfg, _ := LoadUserConfig()
+	if cfg == nil || !cfg.Status.ShellRunningIndicator {
+		return false
+	}
+	paneInfo, snapshotAt, ok := tmux.GetCachedPaneInfoSnapshot(i.tmuxSession.Name)
+	if !ok || paneInfo.Dead || paneInfo.CurrentCommand == "" {
+		return false
+	}
+	if !i.lastStartTime.IsZero() && snapshotAt.Before(i.lastStartTime) {
 		return false
 	}
 	cmd := paneInfo.CurrentCommand
