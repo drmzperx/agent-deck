@@ -2349,6 +2349,7 @@ func LoadUserConfig() (*UserConfig, error) {
 		fresh := cloneDefaultUserConfig()
 		userConfigCache = &fresh
 		userConfigCacheMtime = time.Time{}
+		SetGroupSortMode(fresh.GetGroupSort())
 		return userConfigCache, nil
 	}
 
@@ -2356,6 +2357,7 @@ func LoadUserConfig() (*UserConfig, error) {
 		fresh := cloneDefaultUserConfig()
 		userConfigCache = &fresh
 		userConfigCacheMtime = time.Time{}
+		SetGroupSortMode(fresh.GetGroupSort())
 		return userConfigCache, nil
 	}
 
@@ -2366,6 +2368,7 @@ func LoadUserConfig() (*UserConfig, error) {
 		fresh := cloneDefaultUserConfig()
 		userConfigCache = &fresh
 		userConfigCacheMtime = currentMtime
+		SetGroupSortMode(fresh.GetGroupSort())
 		return userConfigCache, fmt.Errorf("config.toml parse error: %w", err)
 	}
 
