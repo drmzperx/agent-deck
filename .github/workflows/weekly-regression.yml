@@ -326,37 +326,54 @@ jobs:
 
             const title = `Weekly regression check: ${failureCount} failure(s) detected [${today}]`;
 
-            // --- Idempotency: check for existing open issue ---
-            const existingIssues = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              labels: 'regression,automated',
-              per_page: 5,
-            });
+            // Reporting must not turn a regression run red on its own.
+            // Forks may have Issues disabled (410 "Issues has been disabled"),
+            // and transient API errors shouldn't mask the real test outcome.
+            // Surface the regression in the step summary regardless, then try
+            // to file an issue best-effort.
+            await core.summary
+              .addRaw(`### ${title}\n\n`)
+              .addRaw(body)
+              .write();
 
-            const existing = existingIssues.data.find(i =>
-              i.title.startsWith('Weekly regression check:')
-            );
-
-            if (existing) {
-              // Append comment to existing issue instead of creating duplicate
-              await github.rest.issues.createComment({
+            try {
+              // --- Idempotency: check for existing open issue ---
+              const existingIssues = await github.rest.issues.listForRepo({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: existing.number,
-                body: `## Update: ${today}\n\n${body}`,
+                state: 'open',
+                labels: 'regression,automated',
+                per_page: 5,
               });
-              core.info(`Appended comment to existing issue #${existing.number}`);
-            } else {
-              // Create new issue
-              const created = await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: title,
-                body: body,
-                labels: ['regression', 'automated'],
-                assignees: [context.repo.owner],
-              });
-              core.info(`Created issue #${created.data.number}: ${created.data.html_url}`);
+
+              const existing = existingIssues.data.find(i =>
+                i.title.startsWith('Weekly regression check:')
+              );
+
+              if (existing) {
+                // Append comment to existing issue instead of creating duplicate
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: existing.number,
+                  body: `## Update: ${today}\n\n${body}`,
+                });
+                core.info(`Appended comment to existing issue #${existing.number}`);
+              } else {
+                // Create new issue
+                const created = await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title: title,
+                  body: body,
+                  labels: ['regression', 'automated'],
+                  assignees: [context.repo.owner],
+                });
+                core.info(`Created issue #${created.data.number}: ${created.data.html_url}`);
+              }
+            } catch (err) {
+              // e.g. 410 Gone when Issues are disabled on a fork. Don't fail
+              // the run — the regression is already in the step summary and
+              // the failing test steps speak for themselves.
+              core.warning(`Could not file regression issue (${err.status || 'error'}): ${err.message}`);
             }
