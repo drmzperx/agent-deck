@@ -104,6 +104,10 @@ func mapEventToStatus(event string) string {
 		return "running" // Gemini received user input and is processing
 	case "afteragent":
 		return "waiting" // Gemini completed response, back to waiting
+	case "prellmcall":
+		return "running" // Hermes: turn started (LLM/tool-calling loop), agent is working
+	case "postllmcall":
+		return "waiting" // Hermes: turn complete, final response produced, back at prompt
 	case "pretoolcall", "pretooluse":
 		return "running" // executing a tool call
 	case "posttoolcall", "posttooluse", "posttoolusefailure":
