@@ -188,6 +188,77 @@ func TestClaudeSessionNameIn_MtimeFallbackWhenNoUpdatedAt(t *testing.T) {
 	}
 }
 
+// TestClaudeSessionNameIn_DerivedNameSuppressed: a name Claude auto-generated
+// from the cwd basename (nameSource="derived", e.g. "workspace-75") must NOT be
+// returned for sync — it would clobber the user's agent-deck title.
+func TestClaudeSessionNameIn_DerivedNameSuppressed(t *testing.T) {
+	home := t.TempDir()
+	seedClaudeSessionFile(t, home, "1234.json", map[string]any{
+		"sessionId": "sid-d", "name": "workspace-75", "nameSource": "derived", "updatedAt": int64(1000),
+	})
+	if got := ClaudeSessionNameIn(filepath.Join(home, ".claude"), "sid-d"); got != "" {
+		t.Errorf("ClaudeSessionNameIn = %q, want empty (derived name must be suppressed)", got)
+	}
+}
+
+// TestClaudeSessionNameIn_UserNameSyncs: a user-chosen name (nameSource other
+// than "derived") still flows through, preserving the #572 --name/rename sync.
+func TestClaudeSessionNameIn_UserNameSyncs(t *testing.T) {
+	home := t.TempDir()
+	seedClaudeSessionFile(t, home, "1234.json", map[string]any{
+		"sessionId": "sid-u", "name": "my-feature", "nameSource": "user", "updatedAt": int64(1000),
+	})
+	if got := ClaudeSessionNameIn(filepath.Join(home, ".claude"), "sid-u"); got != "my-feature" {
+		t.Errorf("ClaudeSessionNameIn = %q, want %q (user-chosen name must sync)", got, "my-feature")
+	}
+}
+
+// TestClaudeSessionNameIn_LegacyNoNameSourceSyncs: older Claude versions wrote a
+// --name without a nameSource field; those must still sync (backward compat).
+func TestClaudeSessionNameIn_LegacyNoNameSourceSyncs(t *testing.T) {
+	home := t.TempDir()
+	seedClaudeSessionFile(t, home, "1234.json", map[string]any{
+		"sessionId": "sid-l", "name": "legacy-name", "updatedAt": int64(1000),
+	})
+	if got := ClaudeSessionNameIn(filepath.Join(home, ".claude"), "sid-l"); got != "legacy-name" {
+		t.Errorf("ClaudeSessionNameIn = %q, want %q (legacy no-nameSource must sync)", got, "legacy-name")
+	}
+}
+
+// TestClaudeSessionNameIn_FreshestDerivedSuppressesStaleUserName: the freshest
+// entry is authoritative — when the live process auto-named (derived), a stale
+// user-named entry must not resurrect the old title.
+func TestClaudeSessionNameIn_FreshestDerivedSuppressesStaleUserName(t *testing.T) {
+	home := t.TempDir()
+	seedClaudeSessionFile(t, home, "1111.json", map[string]any{
+		"sessionId": "sid-fd", "name": "old-user-name", "nameSource": "user", "updatedAt": int64(1000),
+	})
+	seedClaudeSessionFile(t, home, "2222.json", map[string]any{
+		"sessionId": "sid-fd", "name": "workspace-12", "nameSource": "derived", "updatedAt": int64(2000),
+	})
+	if got := ClaudeSessionNameIn(filepath.Join(home, ".claude"), "sid-fd"); got != "" {
+		t.Errorf("ClaudeSessionNameIn = %q, want empty (freshest entry is derived)", got)
+	}
+}
+
+// TestReconcileTitleFromClaude_NoopWhenDerived: end-to-end, a derived Claude
+// name must not overwrite the user's agent-deck title.
+func TestReconcileTitleFromClaude_NoopWhenDerived(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	seedClaudeSessionFile(t, home, "1234.json", map[string]any{
+		"sessionId": "sid-rd", "name": "workspace-75", "nameSource": "derived",
+	})
+
+	inst := &Instance{ID: "i-rd", Title: "dev", Tool: "claude"}
+	if name, changed := inst.ReconcileTitleFromClaude("sid-rd"); changed || name != "" {
+		t.Errorf("got (%q,%v), want no-op for derived name", name, changed)
+	}
+	if inst.Title != "dev" {
+		t.Errorf("Title = %q, want unchanged dev", inst.Title)
+	}
+}
+
 // TestReconcileTitleFromClaude_NoopWhenNoName: no Claude session file → no-op.
 func TestReconcileTitleFromClaude_NoopWhenNoName(t *testing.T) {
 	home := t.TempDir()

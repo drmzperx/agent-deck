@@ -14,7 +14,13 @@ import (
 type claudeSessionMeta struct {
 	SessionID string `json:"sessionId"`
 	Name      string `json:"name"`
-	UpdatedAt *int64 `json:"updatedAt"` // unix ms; nil when absent
+	// NameSource records how Claude chose the name. "derived" means Claude
+	// auto-generated it from the working-directory basename (e.g.
+	// "workspace-75"); any other value (e.g. "user") means the user chose it via
+	// `claude --name` / `/rename`. Absent on older Claude versions that predate
+	// the field. See ClaudeSessionNameIn for how it gates the title sync.
+	NameSource string `json:"nameSource"`
+	UpdatedAt  *int64 `json:"updatedAt"` // unix ms; nil when absent
 }
 
 // ClaudeSessionNameIn scans claudeDir/sessions/*.json and returns the trimmed
@@ -41,6 +47,7 @@ func ClaudeSessionNameIn(claudeDir, sessionID string) string {
 		return ""
 	}
 	bestName := ""
+	bestSource := ""
 	bestTime := int64(-1)
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
@@ -66,7 +73,18 @@ func ClaudeSessionNameIn(claudeDir, sessionID string) string {
 		if ts > bestTime {
 			bestTime = ts
 			bestName = strings.TrimSpace(meta.Name)
+			bestSource = strings.TrimSpace(meta.NameSource)
 		}
+	}
+	// A "derived" name is Claude's auto-generated <cwd-basename>-<id> handle
+	// (e.g. "workspace-75"), not a name the user chose. Syncing it would clobber
+	// the title the user set in agent-deck — the "sessions randomly renamed to
+	// the folder name + a number" bug. Treat it as no syncable name so the
+	// caller keeps the existing title. User-chosen names (`claude --name` /
+	// `/rename`, which carry a non-"derived" nameSource) and legacy entries with
+	// no nameSource field still flow through, preserving the #572 sync behavior.
+	if strings.EqualFold(bestSource, "derived") {
+		return ""
 	}
 	return bestName
 }
