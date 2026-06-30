@@ -250,6 +250,24 @@ func TestBuildHermesCommand_Passthrough(t *testing.T) {
 	}
 }
 
+// TestBuildHermesCommand_InjectsInstanceIDEnv pins the fix for the state
+// indicator: the shell hooks Hermes spawns run `agent-deck hook-handler`, which
+// reads AGENTDECK_INSTANCE_ID and silently no-ops without it. Both the default
+// and custom-command (passthrough) launch paths must export it.
+func TestBuildHermesCommand_InjectsInstanceIDEnv(t *testing.T) {
+	restore := resetUserConfigCache(t, &UserConfig{})
+	defer restore()
+
+	inst := &Instance{ID: "abc-123", Title: "dev", Tool: "hermes"}
+
+	if cmd := inst.buildHermesCommand("hermes"); !strings.Contains(cmd, "AGENTDECK_INSTANCE_ID=abc-123") {
+		t.Errorf("buildHermesCommand() = %q, want it to export AGENTDECK_INSTANCE_ID", cmd)
+	}
+	if pass := inst.buildHermesCommand("hermes --special-flag"); !strings.Contains(pass, "AGENTDECK_INSTANCE_ID=abc-123") {
+		t.Errorf("buildHermesCommand passthrough = %q, want it to export AGENTDECK_INSTANCE_ID", pass)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Gateway health check tests
 // ---------------------------------------------------------------------------

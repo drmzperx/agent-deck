@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"al.essio.dev/pkg/shellescape"
 )
 
 // HermesOptions holds launch options for Hermes Agent CLI sessions.
@@ -78,6 +80,16 @@ func (i *Instance) buildHermesCommand(baseCommand string) string {
 	}
 
 	envPrefix := i.buildEnvSourceCommand()
+
+	// AGENTDECK_* env injection is required for the shell hooks Hermes spawns
+	// (pre_llm_call / pre_tool_call / … → `agent-deck hook-handler`) to identify
+	// this session. hook-handler reads AGENTDECK_INSTANCE_ID and silently no-ops
+	// without it, so without this prefix Hermes hooks never write a status file
+	// and the state indicator never updates. Injected BEFORE the custom-command
+	// passthrough so those sessions get it too (mirrors buildCodexCommand).
+	agentdeckEnvPrefix := fmt.Sprintf("AGENTDECK_INSTANCE_ID=%s AGENTDECK_TITLE=%q AGENTDECK_TOOL=%s AGENTDECK_PROFILE=%s ",
+		i.ID, i.Title, i.Tool, shellescape.Quote(sessionProfileEnvValue()))
+	envPrefix += agentdeckEnvPrefix
 
 	// Passthrough: custom command from CLI (not the bare name)
 	if baseCommand != "hermes" && baseCommand != "" {
