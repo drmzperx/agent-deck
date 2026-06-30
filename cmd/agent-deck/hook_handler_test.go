@@ -26,6 +26,8 @@ func TestMapEventToStatus(t *testing.T) {
 		{"PreCompact", ""},
 		{"UnknownEvent", ""},
 		// Hermes shell hook events
+		{"pre_llm_call", "running"},
+		{"post_llm_call", "waiting"},
 		{"pre_tool_call", "running"},
 		{"post_tool_call", "waiting"},
 		{"on_session_start", "waiting"},

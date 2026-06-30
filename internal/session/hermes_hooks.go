@@ -82,10 +82,19 @@ func isAgentDeckOwnedHook(cmd string) bool {
 }
 
 // hermesHookEvents are the Hermes lifecycle events we subscribe to.
-// pre_tool_call/post_tool_call bracket each tool call (running/waiting).
+// pre_llm_call/post_llm_call bracket the WHOLE turn (running/waiting): per the
+// Hermes docs, pre_llm_call fires once per turn before the tool-calling loop
+// begins and post_llm_call fires once per turn after the final response is
+// produced. Without these, a turn that generates text without calling a tool
+// (the common case) never flips to "running" — the indicator was stuck on the
+// prior post_tool_call/on_session_start "waiting" state while Hermes was busy.
+// pre_tool_call/post_tool_call bracket each tool call (running/waiting) for
+// finer mid-turn granularity (nested inside the pre/post_llm_call bracket).
 // on_session_start provides an initial waiting state.
 // on_session_end signals the session is dead.
 var hermesHookEvents = []string{
+	"pre_llm_call",
+	"post_llm_call",
 	"pre_tool_call",
 	"post_tool_call",
 	"on_session_start",

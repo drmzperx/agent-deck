@@ -59,7 +59,7 @@ func TestInjectHermesHooks_AllEventsPresent(t *testing.T) {
 		t.Fatal("no hooks section in config.yaml")
 	}
 
-	for _, event := range []string{"pre_tool_call", "post_tool_call", "on_session_start", "on_session_end"} {
+	for _, event := range []string{"pre_llm_call", "post_llm_call", "pre_tool_call", "post_tool_call", "on_session_start", "on_session_end"} {
 		entries, _ := hooksSection[event].([]interface{})
 		found := false
 		for _, e := range entries {
