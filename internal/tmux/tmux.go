@@ -2199,24 +2199,21 @@ func (s *Session) EnsureConfigured() {
 		return
 	}
 
-	before := configureTimeoutCount(s.SocketName)
-
 	// Run deferred configuration
 	s.ConfigureStatusBar()
 	s.ConfigureTerminalTitle()
 	_ = s.EnableMouseMode()
 
-	if configureTimeoutCount(s.SocketName) != before {
-		// Something hit its deadline. Leave s.configured false so this session
-		// is retried once the server recovers — otherwise a session configured
-		// during a wedge is permanently marked done and never gets its status
-		// bar, title, or mouse mode. The breaker keeps that retry from becoming
-		// a spin.
-		statusLog.Debug("lazy_config_incomplete_timeout",
-			slog.String("session", s.DisplayName))
-		return
-	}
-
+	// Always mark configured, even if one of the calls above timed out: the
+	// one-session-per-tick loop (internal/ui/home.go) breaks on the first
+	// unconfigured session it finds, so leaving s.configured false to retry
+	// would starve every session behind this one, permanently, on a wedged
+	// socket. The breaker (configureAllowed above) is what actually protects
+	// against a wedged server; a per-session retry hatch on top of it just
+	// reintroduces the starvation it was meant to prevent. It also read a
+	// per-SOCKET cumulative counter to infer "did THIS call time out?", which
+	// a concurrent configure on the same socket (internal/session/discovery.go)
+	// could misattribute.
 	s.configured = true
 	statusLog.Debug("lazy_config_completed", slog.String("session", s.DisplayName))
 }

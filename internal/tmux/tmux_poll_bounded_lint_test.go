@@ -144,7 +144,7 @@ type unboundedPollSite struct {
 	file   string
 	line   int
 	callee string // "tmuxExec", "s.tmuxCmd", "tmux.Exec"
-	sub    string // the tmux subcommand literal
+	sub    string // the tmux subcommand literal, or the "<non-literal>" sentinel when it cannot be statically proven
 }
 
 func scanForUnboundedPolls(t *testing.T, root string) []unboundedPollSite {
@@ -240,15 +240,20 @@ func collectSites(fset *token.FileSet, f *ast.File, path string) []unboundedPoll
 		}
 
 		line := fset.Position(call.Pos()).Line
-		if exempt[line] {
-			return true
-		}
 
 		sub, isLit := stringLiteral(call.Args[subIdx])
 		if !isLit || call.Ellipsis.IsValid() {
 			// Cannot prove this is safe. A variadic spread or a computed arg
 			// hides the subcommand from static reading — which is exactly how
 			// four unbounded set-option batches survived this lint.
+			//
+			// The exemption marker is checked only in this branch: it waives
+			// an unprovable-argv report, not a statically-provable violation
+			// below. A marker above a literal `s.tmuxCmd("capture-pane", ...)`
+			// must not silence that report.
+			if exempt[line] {
+				return true
+			}
 			sites = append(sites, unboundedPollSite{
 				file: path, line: line, callee: callee, sub: "<non-literal>",
 			})

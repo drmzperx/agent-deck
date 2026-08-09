@@ -59,16 +59,28 @@ func TestEnableMouseModeAndEnhancements_ReturnWhenTmuxWedges(t *testing.T) {
 	fakeWedgedTmux(t)
 
 	s := &Session{Name: "agentdeck_test", DisplayName: "test", SocketName: "test-socket"}
+	// Struct literal leaves s.mouse false, its zero value — but production
+	// default is true (see SetMouse). Without this, the `if s.mouse` guard in
+	// EnableMouseMode skips the `mouse on` runBoundedMutation entirely and the
+	// test only ever exercises the enhanceArgs poll batch, silently failing to
+	// cover the mutation path.
+	s.SetMouse(true)
 
 	done := make(chan struct{})
+	start := time.Now()
 	go func() {
 		_ = s.EnableMouseMode()
 		close(done)
 	}()
 
+	// tmuxMutationTimeout (5s) for `mouse on`, plus tmuxPollTimeout (3s) for
+	// the enhancement batch, plus slack.
 	select {
 	case <-done:
-	case <-time.After(20 * time.Second):
+		if elapsed := time.Since(start); elapsed < tmuxPollTimeout {
+			t.Fatalf("returned in %v, before the %v deadline — EnableMouseMode became a no-op", elapsed, tmuxPollTimeout)
+		}
+	case <-time.After(25 * time.Second):
 		t.Fatal("EnableMouseMode did not return: an enhancement batch is still unbounded")
 	}
 }
