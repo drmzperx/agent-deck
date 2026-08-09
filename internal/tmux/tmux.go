@@ -2863,7 +2863,8 @@ func (s *Session) Start(command string) error {
 	// those options (see installWindowPolicyHook). ApplySharedViewSize
 	// re-applies it before every attach (sharedview.go).
 	startArgs = append(startArgs, s.windowPolicyStartArgs()...)
-	_ = commandRun(s.tmuxCmd(startArgs...))
+	// Bounded — see tmuxPollTimeout.
+	_ = s.runBoundedRun(startArgs...)
 	s.installWindowPolicyHook()
 
 	// Bind Ctrl+Q to detach at the tmux level as fallback for terminals where
@@ -2917,7 +2918,8 @@ func (s *Session) Start(command string) error {
 			args = append(args, "set-option", "-t", s.Name, "-q", key, value)
 			first = false
 		}
-		_ = commandRun(s.tmuxCmd(args...))
+		// Bounded — see tmuxPollTimeout.
+		_ = s.runBoundedRun(args...)
 	}
 
 	// Configure status bar with session info for easy identification
@@ -3648,10 +3650,9 @@ func (s *Session) EnableMouseMode() error {
 	// user tmux setting wins (mirrors Start; see gatedTmuxKeyOptionArgs).
 	enhanceArgs = append(enhanceArgs, gatedTmuxKeyOptionArgs(s.Name, s.OptionOverrides, s.configureTerminalFeatures)...)
 	enhanceArgs = append(enhanceArgs, s.indicZeroWidthMarksArgs()...)
-	enhanceCmd := s.tmuxCmd(enhanceArgs...)
-	// Ignore errors - all these are non-fatal enhancements
-	// Older tmux versions may not support some options
-	_ = commandRun(enhanceCmd)
+	// Bounded — see tmuxPollTimeout. Non-fatal enhancements, but an unbounded
+	// client on tmux 3.0a spins forever rather than failing.
+	_ = s.runBoundedRun(enhanceArgs...)
 
 	return nil
 }

@@ -54,3 +54,21 @@ func TestConfigureTerminalTitle_ReturnsWhenTmuxWedges(t *testing.T) {
 		t.Fatal("ConfigureTerminalTitle did not return: still unbounded")
 	}
 }
+
+func TestEnableMouseModeAndEnhancements_ReturnWhenTmuxWedges(t *testing.T) {
+	fakeWedgedTmux(t)
+
+	s := &Session{Name: "agentdeck_test", DisplayName: "test", SocketName: "test-socket"}
+
+	done := make(chan struct{})
+	go func() {
+		_ = s.EnableMouseMode()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("EnableMouseMode did not return: an enhancement batch is still unbounded")
+	}
+}
