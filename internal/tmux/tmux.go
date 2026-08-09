@@ -6761,6 +6761,7 @@ func (s *Session) SplitShellPane(workdir string) error {
 	} else {
 		args = append(args, shell)
 	}
+	// tmux-unbounded-ok: one-shot split-window pane creation, not a cadence command.
 	return commandRun(tmuxExec(s.SocketName, args...))
 }
 
