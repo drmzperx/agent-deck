@@ -3551,7 +3551,15 @@ func (s *Session) ConfigureTerminalTitle() {
 	if len(args) == 0 {
 		return
 	}
-	_ = s.runBoundedRun(args...)
+	// Bounded — see tmuxPollTimeout. Mirrors ConfigureStatusBar: this compound
+	// set-option batch was an observed orphaned 100%-CPU tmux client on
+	// 2026-08-08, spawned here through the unbounded factory. A dropped title
+	// is cosmetic; a wedged client is not.
+	if err := s.runBoundedRun(args...); err != nil {
+		statusLog.Debug("configure_terminal_title_failed",
+			slog.String("session", s.DisplayName),
+			slog.Any("error", err))
+	}
 }
 
 // GetGroupPath and SetGroupPath synchronize the cached title metadata without
