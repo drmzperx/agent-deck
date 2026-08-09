@@ -99,9 +99,12 @@ func backdateConfigureBreaker(socket string, d time.Duration) {
 	}
 }
 
-// configureTimeoutCount returns the socket's cumulative deadline count. Used by
-// EnsureConfigured to tell whether any of its commands timed out without
-// changing the void signatures of ConfigureStatusBar / ConfigureTerminalTitle.
+// configureTimeoutCount returns the socket's cumulative deadline count. Test
+// seam: EnsureConfigured no longer consults this (see the comment there for
+// why a per-session retry hatch driven by a per-socket counter was removed),
+// but it stays so tests can assert that runBoundedConfigure actually fed the
+// breaker on a deadline, rather than only exercising recordConfigureResult
+// directly.
 func configureTimeoutCount(socket string) uint64 {
 	configureBreakerMu.Lock()
 	defer configureBreakerMu.Unlock()
@@ -118,7 +121,13 @@ func configureTimeoutCount(socket string) uint64 {
 func (s *Session) runBoundedConfigure(args ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), tmuxPollTimeout)
 	defer cancel()
-	err := annotateDeadline(ctx.Err(), tmuxExecContext(ctx, s.SocketName, args...).Run())
+	// Run() must complete (or be killed at the deadline) before ctx.Err() is
+	// read. Go evaluates call arguments left-to-right, so inlining
+	// annotateDeadline(ctx.Err(), tmuxExecContext(...).Run()) reads ctx.Err()
+	// BEFORE Run() blocks — it is always nil, and the breaker never fires.
+	// Matches runBoundedMutation (socket.go).
+	runErr := tmuxExecContext(ctx, s.SocketName, args...).Run()
+	err := annotateDeadline(ctx.Err(), runErr)
 	recordConfigureResult(s.SocketName, errors.Is(err, errTmuxTimeout))
 	return err
 }
