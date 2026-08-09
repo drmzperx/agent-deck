@@ -171,45 +171,97 @@ func scanForUnboundedPolls(t *testing.T, root string) []unboundedPollSite {
 			return nil
 		}
 
-		ast.Inspect(f, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-
-			callee, subIdx, ok := unboundedTmuxCallee(call.Fun)
-			if !ok || len(call.Args) <= subIdx {
-				return true
-			}
-			// exec.Command and its execCommand seam are generic: only flag them
-			// when argv[0] is literally "tmux", or every call whose second arg
-			// happens to collide with a tmux subcommand name would be reported.
-			if callee == "exec.Command" || callee == "execCommand" {
-				if bin, isLit := stringLiteral(call.Args[0]); !isLit || bin != "tmux" {
-					return true
-				}
-			}
-			sub, ok := stringLiteral(call.Args[subIdx])
-			if !ok {
-				return true
-			}
-			if !requiresDeadline(sub) {
-				return true
-			}
-
-			sites = append(sites, unboundedPollSite{
-				file:   path,
-				line:   fset.Position(call.Pos()).Line,
-				callee: callee,
-				sub:    sub,
-			})
-			return true
-		})
+		sites = append(sites, collectSites(fset, f, path)...)
 		return nil
 	})
 	if err != nil {
 		t.Fatalf("walk module: %v", err)
 	}
+	return sites
+}
+
+// exemptionMarker suppresses an unprovable-argv report. Place it on the call
+// line or the line immediately above, with a reason.
+const exemptionMarker = "tmux-unbounded-ok:"
+
+// scanSource runs the unbounded-poll scan over one in-memory file. Extracted
+// so the lint's own rules can be unit-tested without touching the tree.
+func scanSource(t *testing.T, path, src string) []unboundedPollSite {
+	t.Helper()
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, path, src, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	return collectSites(fset, f, path)
+}
+
+// exemptedLines returns the set of line numbers suppressed by a marker comment,
+// covering both the comment's own line and the line after it.
+func exemptedLines(fset *token.FileSet, f *ast.File) map[int]bool {
+	out := map[int]bool{}
+	for _, cg := range f.Comments {
+		for _, c := range cg.List {
+			if !strings.Contains(c.Text, exemptionMarker) {
+				continue
+			}
+			line := fset.Position(c.Pos()).Line
+			out[line] = true
+			out[line+1] = true
+		}
+	}
+	return out
+}
+
+// collectSites walks one parsed file and reports every unbounded cadence
+// tmux call. A subcommand that cannot be proven safe statically — a variadic
+// spread or a computed argument — is reported as "<non-literal>" rather than
+// silently skipped; that inversion is the fix for the blind spot that let
+// four unbounded set-option batches pass this lint for months.
+func collectSites(fset *token.FileSet, f *ast.File, path string) []unboundedPollSite {
+	exempt := exemptedLines(fset, f)
+	var sites []unboundedPollSite
+
+	ast.Inspect(f, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		callee, subIdx, ok := unboundedTmuxCallee(call.Fun)
+		if !ok || len(call.Args) <= subIdx {
+			return true
+		}
+		// exec.Command and its execCommand seam are generic: only flag them
+		// when argv[0] is literally "tmux".
+		if callee == "exec.Command" || callee == "execCommand" {
+			if bin, isLit := stringLiteral(call.Args[0]); !isLit || bin != "tmux" {
+				return true
+			}
+		}
+
+		line := fset.Position(call.Pos()).Line
+		if exempt[line] {
+			return true
+		}
+
+		sub, isLit := stringLiteral(call.Args[subIdx])
+		if !isLit || call.Ellipsis.IsValid() {
+			// Cannot prove this is safe. A variadic spread or a computed arg
+			// hides the subcommand from static reading — which is exactly how
+			// four unbounded set-option batches survived this lint.
+			sites = append(sites, unboundedPollSite{
+				file: path, line: line, callee: callee, sub: "<non-literal>",
+			})
+			return true
+		}
+		if !requiresDeadline(sub) {
+			return true
+		}
+		sites = append(sites, unboundedPollSite{
+			file: path, line: line, callee: callee, sub: sub,
+		})
+		return true
+	})
 	return sites
 }
 
@@ -266,4 +318,36 @@ func unboundedTmuxCallee(fun ast.Expr) (name string, subIdx int, ok bool) {
 		}
 	}
 	return "", 0, false
+}
+
+// TestUnprovableArgvIsRejected pins the inverted default: an unbounded tmux
+// factory whose subcommand cannot be read statically must be reported, not
+// skipped. Before 2026-08-08 the scanner returned early on a non-literal arg,
+// which is how four unbounded set-option batches passed this lint for months.
+func TestUnprovableArgvIsRejected(t *testing.T) {
+	src := `package p
+func f(s *Session, args []string) {
+	_ = s.tmuxCmd(args...).Run()
+}
+`
+	sites := scanSource(t, "internal/tmux/fake.go", src)
+	if len(sites) != 1 {
+		t.Fatalf("want 1 unprovable site, got %d: %+v", len(sites), sites)
+	}
+	if sites[0].sub != "<non-literal>" {
+		t.Fatalf("want sub %q, got %q", "<non-literal>", sites[0].sub)
+	}
+}
+
+func TestExemptionCommentSuppresses(t *testing.T) {
+	src := `package p
+func f(s *Session, args []string) {
+	// tmux-unbounded-ok: user-initiated, not a cadence command
+	_ = s.tmuxCmd(args...).Run()
+}
+`
+	sites := scanSource(t, "internal/tmux/fake.go", src)
+	if len(sites) != 0 {
+		t.Fatalf("exemption comment ignored, got %+v", sites)
+	}
 }
