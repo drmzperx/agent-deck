@@ -1,0 +1,56 @@
+package tmux
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+// fakeWedgedTmux installs a `tmux` on PATH that never exits, simulating a
+// tmux 3.0a client that has exhausted its fd table. The factory in socket.go
+// resolves "tmux" via PATH, so this intercepts every tmux spawn.
+//
+// The body is a loop, not a bare `sleep`: sh exec-optimizes a single-command
+// script into the command itself, which would change the process identity
+// (see CLAUDE.md § Testing notes).
+func fakeWedgedTmux(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	script := filepath.Join(dir, "tmux")
+	body := "#!/bin/sh\nwhile :; do sleep 1; done\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	// In the RED phase the call under test is still unbounded, so its child is
+	// never SIGKILLed and outlives the test binary. Reap it explicitly —
+	// otherwise each red run leaves a spinning `sh` behind, which is the very
+	// thing this whole plan exists to stop.
+	t.Cleanup(func() { _ = exec.Command("pkill", "-f", script).Run() })
+}
+
+func TestConfigureTerminalTitle_ReturnsWhenTmuxWedges(t *testing.T) {
+	fakeWedgedTmux(t)
+
+	s := &Session{Name: "agentdeck_test", DisplayName: "test", SocketName: "test-socket"}
+
+	done := make(chan struct{})
+	start := time.Now()
+	go func() {
+		s.ConfigureTerminalTitle()
+		close(done)
+	}()
+
+	// tmuxPollTimeout (3s) + tmuxSubprocessWaitDelay (2s) + slack.
+	select {
+	case <-done:
+		if elapsed := time.Since(start); elapsed < tmuxPollTimeout {
+			t.Fatalf("returned in %v, before the %v deadline — deadline not exercised", elapsed, tmuxPollTimeout)
+		}
+	case <-time.After(8 * time.Second):
+		t.Fatal("ConfigureTerminalTitle did not return: still unbounded")
+	}
+}
