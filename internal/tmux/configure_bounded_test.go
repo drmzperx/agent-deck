@@ -72,3 +72,28 @@ func TestEnableMouseModeAndEnhancements_ReturnWhenTmuxWedges(t *testing.T) {
 		t.Fatal("EnableMouseMode did not return: an enhancement batch is still unbounded")
 	}
 }
+
+// A wedged configure must not block a concurrent reader indefinitely. Before
+// the deadline fix, EnsureConfigured held s.mu across an unbounded tmux client
+// that never exited, so IsConfigured and the attach path blocked forever.
+func TestEnsureConfigured_DoesNotBlockReadersForever(t *testing.T) {
+	fakeWedgedTmux(t)
+
+	s := &Session{Name: "agentdeck_test", DisplayName: "test", SocketName: "mutex-test-sock"}
+	resetConfigureBreaker(s.SocketName)
+
+	go s.EnsureConfigured()
+	time.Sleep(200 * time.Millisecond) // let it take s.mu
+
+	done := make(chan struct{})
+	go func() {
+		_ = s.IsConfigured()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("IsConfigured blocked behind a wedged EnsureConfigured")
+	}
+}

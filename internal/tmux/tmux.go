@@ -2182,6 +2182,15 @@ func ReconnectSessionLazy(tmuxName, displayName, workDir, command string, previo
 // Safe to call multiple times - does nothing if already configured or session doesn't exist.
 // Thread-safe via mutex protection.
 func (s *Session) EnsureConfigured() {
+	// Checked before taking s.mu: a wedged configure holds the lock for the
+	// full deadline, and blocking here would put the caller (including the
+	// attach path at internal/ui/home.go:13202) behind it for no benefit.
+	if !configureAllowed(s.SocketName) {
+		statusLog.Debug("lazy_config_skipped_breaker_open",
+			slog.String("session", s.DisplayName))
+		return
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -2190,10 +2199,23 @@ func (s *Session) EnsureConfigured() {
 		return
 	}
 
+	before := configureTimeoutCount(s.SocketName)
+
 	// Run deferred configuration
 	s.ConfigureStatusBar()
 	s.ConfigureTerminalTitle()
 	_ = s.EnableMouseMode()
+
+	if configureTimeoutCount(s.SocketName) != before {
+		// Something hit its deadline. Leave s.configured false so this session
+		// is retried once the server recovers — otherwise a session configured
+		// during a wedge is permanently marked done and never gets its status
+		// bar, title, or mouse mode. The breaker keeps that retry from becoming
+		// a spin.
+		statusLog.Debug("lazy_config_incomplete_timeout",
+			slog.String("session", s.DisplayName))
+		return
+	}
 
 	s.configured = true
 	statusLog.Debug("lazy_config_completed", slog.String("session", s.DisplayName))
@@ -3557,7 +3579,7 @@ func (s *Session) ConfigureTerminalTitle() {
 	// set-option batch was an observed orphaned 100%-CPU tmux client on
 	// 2026-08-08, spawned here through the unbounded factory. A dropped title
 	// is cosmetic; a wedged client is not.
-	if err := s.runBoundedRun(args...); err != nil {
+	if err := s.runBoundedConfigure(args...); err != nil {
 		statusLog.Debug("configure_terminal_title_failed",
 			slog.String("session", s.DisplayName),
 			slog.Any("error", err))
@@ -3595,7 +3617,7 @@ func (s *Session) ConfigureStatusBar() {
 	}
 	// Bounded — see tmuxPollTimeout. This status set-option batch was one of the
 	// observed orphaned 100%-CPU tmux clients when the server was wedged.
-	_ = s.runBoundedRun(args...)
+	_ = s.runBoundedConfigure(args...)
 }
 
 // EnableMouseMode enables mouse scrolling, clipboard integration, and optimal settings
@@ -3652,7 +3674,7 @@ func (s *Session) EnableMouseMode() error {
 	enhanceArgs = append(enhanceArgs, s.indicZeroWidthMarksArgs()...)
 	// Bounded — see tmuxPollTimeout. Non-fatal enhancements, but an unbounded
 	// client on tmux 3.0a spins forever rather than failing.
-	_ = s.runBoundedRun(enhanceArgs...)
+	_ = s.runBoundedConfigure(enhanceArgs...)
 
 	return nil
 }
