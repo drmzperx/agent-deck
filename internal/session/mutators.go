@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -227,7 +228,7 @@ func SetField(inst *Instance, field, value string, extraArgsTokens []string) (ol
 		if !IsValidSessionColor(trimmed) {
 			return oldValue, nil, &MutationError{
 				Field: field,
-				Msg:   fmt.Sprintf("invalid color %q — expected '#RRGGBB', ANSI '0'..'255', or '' to clear", trimmed),
+				Msg:   fmt.Sprintf("invalid color %q — expected a highlight name (purple/green/yellow/orange/red), '#RRGGBB', ANSI '0'..'255', or '' to clear", trimmed),
 			}
 		}
 		inst.Color = trimmed
@@ -638,10 +639,45 @@ func makeGenericSessionEnvPostCommit(inst *Instance, value string, names []strin
 	}
 }
 
-// IsValidSessionColor validates a per-session color tint (issue #391).
-// Accepts "", "#RRGGBB" hex, or ANSI 256-palette decimal "0".."255".
+// highlightRoleNames are the six palette slots the TUI row-highlight hotkey
+// assigns (internal/ui/rowhighlight.go). They are stored verbatim in
+// Instance.Color alongside the older #391 hex/ANSI literals.
+//
+// "blue" is intentionally absent: it maps to the theme accent, which is the
+// cursor row's own background, so a blue highlight would be invisible.
+var highlightRoleNames = map[string]bool{
+	"purple": true,
+	"green":  true,
+	"yellow": true,
+	"orange": true,
+	"red":    true,
+}
+
+// HighlightRoleNames returns the role names this validator accepts, sorted.
+//
+// It exists so internal/ui can assert that its palette and this list agree in
+// BOTH directions. The two lists have to be separate — internal/session must
+// not import internal/ui — and a "keep these in sync" comment cannot enforce
+// anything. Without the check, a role added here but not there would validate
+// and then render as a plain row, while a role added there but not here would
+// make a working keypress fail with "invalid color"; both are silent in CI.
+func HighlightRoleNames() []string {
+	out := make([]string, 0, len(highlightRoleNames))
+	for name := range highlightRoleNames {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// IsValidSessionColor validates a per-session color (issue #391). Accepts "",
+// one of the six TUI highlight role names (purple/green/yellow/orange/red),
+// "#RRGGBB" hex, or an ANSI 256-palette decimal "0".."255".
 func IsValidSessionColor(v string) bool {
 	if v == "" {
+		return true
+	}
+	if highlightRoleNames[v] {
 		return true
 	}
 	if len(v) == 7 && v[0] == '#' {

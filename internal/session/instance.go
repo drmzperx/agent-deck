@@ -383,10 +383,13 @@ type Instance struct {
 
 	// Color is an optional user-chosen tint for this session's TUI row (issue #391).
 	// Accepts a lipgloss-compatible color spec:
+	//   - "purple", "green", "yellow", "orange", "red" - one of the five
+	//                      TUI highlight role names assigned by the alt+h
+	//                      row-highlight hotkey (internal/ui/rowhighlight.go)
 	//   - "#RRGGBB"      - truecolor hex
 	//   - "0".."255"     - ANSI 256-palette index as a decimal string
 	//   - ""             - default (no tint, current rendering unchanged)
-	// Validation happens at CLI/API boundary in cmd/agent-deck/session_cmd.go.
+	// Validation happens in session.IsValidSessionColor (internal/session/mutators.go).
 	// Empty string is the default so the field is fully opt-in and never
 	// changes rendering for users who don't set it.
 	Color string `json:"color,omitempty"`

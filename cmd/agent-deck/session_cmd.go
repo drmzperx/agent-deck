@@ -2192,7 +2192,7 @@ func handleSessionSet(profile string, args []string) {
 		fmt.Printf("  plugins            Comma-separated plugin catalog names (claude only) — see [plugins.<name>] in %s\n", effectiveUserConfigPathForHelp())
 		fmt.Println("  extra-args         Extra claude CLI tokens (claude only; use `-- --flag value` for tokens starting with -; persisted plaintext — no secrets)")
 		fmt.Println("  model              Per-session model override (e.g. opus/sonnet/haiku or a gemini model); persists across restart (#1436). Empty clears it.")
-		fmt.Println("  color              Optional TUI row tint: '#RRGGBB' or ANSI '0'..'255' or '' (issue #391)")
+		fmt.Println("  color              TUI row color: highlight name (purple/green/yellow/orange/red) or '#RRGGBB' or ANSI '0'..'255' or '' (issue #391)")
 		fmt.Println("  claude-session-id  Claude conversation ID")
 		fmt.Println("  favorite           Favourite flag: true or false (favorite in list/show --json)")
 		fmt.Println("  gemini-session-id  Gemini conversation ID")
