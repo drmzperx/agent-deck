@@ -251,10 +251,15 @@ type Home struct {
 	profile string // The profile this Home is displaying
 
 	// Data (protected by instancesMu for background worker access)
-	instances          []*session.Instance
-	instanceByID       map[string]*session.Instance // O(1) instance lookup by ID
-	instancesMu        sync.RWMutex                 // Protects instances slice for thread-safe background access
-	switchGenerations  map[string]uint64            // owns async harness-switch completions per instance
+	instances         []*session.Instance
+	instanceByID      map[string]*session.Instance // O(1) instance lookup by ID
+	instancesMu       sync.RWMutex                 // Protects instances slice for thread-safe background access
+	switchGenerations map[string]uint64            // owns async harness-switch completions per instance
+	// highlightCounter drives round-robin colour assignment for the alt+h row
+	// highlight. Deliberately in-memory only: it resets to purple on restart,
+	// which can duplicate a colour already on screen. Read/written under
+	// instancesMu alongside the Instance.Color it assigns.
+	highlightCounter   int
 	storage            *session.Storage
 	groupTree          *session.GroupTree
 	flatItems          []session.Item // Flattened view for cursor navigation
@@ -11619,6 +11624,30 @@ func (h *Home) handleMainKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.collapseOrNavUp()
 		return h, nil
 
+	case h.actionKey(hotkeyHighlightRow):
+		// Toggle a persistent background highlight on the focused session.
+		if len(h.flatItems) == 0 {
+			// Empty deck: no row to be ineligible, so stay silent rather than
+			// surfacing the "not a session" error (and its debug.log line).
+			return h, nil
+		}
+		if h.cursor < len(h.flatItems) {
+			if target := highlightTargetFor(h.flatItems[h.cursor]); target != nil {
+				if err := h.toggleRowHighlight(target); err != nil {
+					h.setError(err)
+					return h, nil
+				}
+				// forceSaveInstances, not saveInstances: the plain version is
+				// a no-op while isReloading, so a highlight pressed during an
+				// auto-reload window would be dropped on the rebuild (the
+				// failure mode behind PR #1573).
+				h.forceSaveInstances()
+				return h, nil
+			}
+		}
+		h.setError(fmt.Errorf("highlight applies to sessions, not groups or windows"))
+		return h, nil
+
 	case "shift+enter":
 		// Open the focused session in a new native terminal tab (or
 		// window, per [ui] iterm_open_as), leaving agent-deck running
@@ -21803,6 +21832,12 @@ func (h *Home) renderSessionItem(
 	// stale live status.
 	statusIcon, statusStyle := rowStatusGlyph(instStatus, instSubstate, inst.IsArchived())
 
+	// Captured before the selection and highlight blocks overwrite statusStyle:
+	// a highlighted row re-applies the glyph's TRUE status colour on top of the
+	// role band, and by that point statusStyle may carry the cursor's inverted
+	// foreground instead.
+	baseStatusFg := statusStyle.GetForeground()
+
 	status := statusStyle.Render(statusIcon)
 
 	// Title styling - add bold/underline for accessibility (colorblind users)
@@ -21818,14 +21853,16 @@ func (h *Home) renderSessionItem(
 		titleStyle = SessionTitleDefault
 	}
 
-	// Issue #391: per-session color tint. When the user has set
-	// Instance.Color (validated CLI-side in isValidSessionColor), override
-	// the title foreground with that color. Bold/underline from the
-	// status-based style above is preserved — only the hue changes, so
-	// colorblind accessibility via weight still works. Empty Color is the
-	// default and leaves titleStyle untouched (zero behavior change for
-	// users who haven't opted in).
-	if inst.Color != "" {
+	// Issue #391: per-session color tint, now split by value form.
+	//
+	//   role name ("cyan")  -> background highlight, applied in the selection
+	//                          block below so it can compose with cursor state
+	//   hex / ANSI          -> title foreground tint, exactly as before
+	//
+	// The split means no existing user's row changes appearance: only values
+	// written by the alt+h hotkey take the new background rendering.
+	highlightRoleForRow := roleOf(inst.Color)
+	if isLegacyColor(inst.Color) {
 		titleStyle = titleStyle.Foreground(lipgloss.Color(inst.Color))
 	}
 
@@ -21858,6 +21895,27 @@ func (h *Home) renderSessionItem(
 			groupIndent := strings.Repeat(treeEmpty, max(0, item.Level-2))
 			baseIndent = groupIndent + SessionSelectionPrefix.Render(" ▶")
 			selectionPrefix = " "
+		}
+	}
+
+	// Row highlight (alt+h). Applied after the selection styling so a
+	// highlighted row under the cursor keeps its accent band while the title
+	// inverts out of it — otherwise the color you just assigned would be
+	// invisible on the very row you assigned it to.
+	if highlightRoleForRow != highlightRoleNone {
+		hs := segmentStyles(highlightRoleForRow, selected)
+		treeStyle = hs.Connector
+		// The glyph keeps its own running/waiting/error colour on the band.
+		statusStyle = highlightStatusStyle(highlightRoleForRow, baseStatusFg)
+		status = statusStyle.Render(statusIcon)
+		titleStyle = titleStyle.
+			Foreground(hs.Title.GetForeground()).
+			Background(hs.Title.GetBackground())
+		if selected && !item.IsSubSession {
+			titleStyle = titleStyle.Bold(true)
+			selectionPrefix = hs.Prefix.Render("▶")
+		} else if selected {
+			titleStyle = titleStyle.Bold(true)
 		}
 	}
 
