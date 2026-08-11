@@ -327,6 +327,24 @@ func pidCgroup(pid int) string {
 	return strings.TrimSpace(string(data))
 }
 
+// cgroupFsType reports the filesystem mounted at /sys/fs/cgroup so a skip
+// diagnostic can name the hierarchy the host is running: "cgroup2fs" is the v2
+// unified hierarchy, "tmpfs" is the legacy v1 layout.
+func cgroupFsType() string {
+	var st syscall.Statfs_t
+	if err := syscall.Statfs("/sys/fs/cgroup", &st); err != nil {
+		return "unknown"
+	}
+	switch st.Type {
+	case 0x63677270: // CGROUP2_SUPER_MAGIC
+		return "cgroup2fs"
+	case 0x01021994: // TMPFS_MAGIC
+		return "tmpfs (cgroup v1)"
+	default:
+		return "other"
+	}
+}
+
 // TestPersistence_TmuxDiesWithoutUserScope is the INVERSE PIN. It asserts
 // that when tmux is spawned WITHOUT the systemd-run --user --scope wrap
 // (i.e., launch_in_user_scope=false — the current v1.5.1 default and also
@@ -385,6 +403,17 @@ func TestPersistence_TmuxDiesWithoutUserScope(t *testing.T) {
 		t.Fatalf("could not resolve ControlGroup for %s: err=%v out=%q", fakeName, scopeErr, scopeCgPath)
 	}
 	killFile := "/sys/fs/cgroup" + scopeCgPath + "/cgroup.kill"
+	// cgroup.kill is cgroup v2 only and arrived in kernel 5.14. On a host
+	// booted with the legacy v1 hierarchy, or on an older kernel, the file
+	// cannot exist and there is no race-free primitive to simulate what
+	// logind does on logout — so there is nothing to assert. Skip with a
+	// diagnostic, matching the two environment skips above, rather than
+	// failing: a missing kernel feature is not a regression in the code
+	// under test.
+	if _, statErr := os.Stat(killFile); os.IsNotExist(statErr) {
+		t.Skipf("TEST-02 skipped: %s does not exist — cgroup.kill requires the cgroup v2 unified hierarchy on kernel 5.14+. This host reports %q for /sys/fs/cgroup.",
+			killFile, cgroupFsType())
+	}
 	if err := os.WriteFile(killFile, []byte("1"), 0o644); err != nil {
 		t.Fatalf("write cgroup.kill %s: %v", killFile, err)
 	}
