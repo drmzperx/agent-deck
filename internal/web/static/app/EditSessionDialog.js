@@ -21,6 +21,21 @@ import { apiFetch } from './api.js'
 import { addToast } from './toasts.js'
 import { displayLabelForTool, resolveEditSessionPickerTools } from './pickerTools.js'
 
+// Row-highlight role names (see internal/ui/rowhighlight.go) resolve to the
+// Tokyo Night dark palette so the preview matches the TUI. Values that are not
+// role names — legacy #RRGGBB tints from issue #391 — pass through unchanged.
+// ANSI indices such as "203" are not valid CSS and preview as nothing; that
+// matches the CLI-only nature of those values and is left alone.
+const HIGHLIGHT_ROLE_HEX = {
+  purple: '#bb9af7',
+  green: '#9ece6a',
+  yellow: '#e0af68',
+  orange: '#ff9e64',
+  red: '#f7768e',
+}
+
+const previewColor = (color) => HIGHLIGHT_ROLE_HEX[color] || color
+
 // Build PATCH body from form state. Only includes fields that differ from
 // the original — mirrors the TUI EditSessionDialog.GetChanges diff logic so
 // no-op submits don't churn the server (or trigger restart prompts).
@@ -175,11 +190,17 @@ export function EditSessionDialog() {
           </div>
           <div class="field">
             <label>COLOR</label>
-            <input
-              data-testid="edit-session-color"
-              value=${color}
-              onInput=${e => setColor(e.target.value)}
-              placeholder="#RRGGBB, 0-255, or blank to clear"/>
+            <div style=${{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <input
+                data-testid="edit-session-color"
+                value=${color}
+                onInput=${e => setColor(e.target.value)}
+                placeholder="purple/green/yellow/orange/red, #RRGGBB, 0-255, or blank"
+                style=${{ flex: 1 }}/>
+              <div data-testid="edit-session-color-preview"
+                   class="swatch"
+                   style=${{ background: previewColor(color), cursor: 'default' }}/>
+            </div>
           </div>
           <div class="field">
             <label>GROUP</label>
