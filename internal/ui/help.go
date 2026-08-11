@@ -260,6 +260,7 @@ func (h *HelpOverlay) View() string {
 	sendKey := h.key(hotkeySendOutput, "x")
 	execShellKey := h.key(hotkeyExecShell, "E")
 	openShellHereKey := h.key(hotkeyOpenShellHere, "h")
+	highlightKey := h.key(hotkeyHighlightRow, "alt+h")
 	notesKey := h.key(hotkeyEditNotes, "e")
 	if cfg, _ := session.LoadUserConfig(); cfg != nil && !cfg.GetShowNotes() {
 		notesKey = ""
@@ -372,6 +373,7 @@ func (h *HelpOverlay) View() string {
 				{sendKey, "Send output to session"},
 				{execShellKey, "Exec shell in sandbox container"},
 				{openShellHereKey, "Open shell in session's worktree (split pane / window)"},
+				{highlightKey, "Toggle a color highlight on the selected session"},
 				{editPathsKey, "Edit multi-repo paths"},
 				{editSessionKey, "Edit session settings (title/color/...)"},
 				{notesKey, "Edit notes"},
