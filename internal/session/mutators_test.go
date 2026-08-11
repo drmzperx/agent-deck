@@ -80,6 +80,12 @@ func TestSetField_Color_Valid(t *testing.T) {
 		{"ansi", "203", "203"},
 		{"clear_empty", "", ""},
 		{"clear_trimmed_whitespace", "   ", ""},
+		{"role_purple", "purple", "purple"},
+		{"role_green", "green", "green"},
+		{"role_yellow", "yellow", "yellow"},
+		{"role_orange", "orange", "orange"},
+		{"role_red", "red", "red"},
+		{"role_trimmed", "  green  ", "green"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -96,9 +102,11 @@ func TestSetField_Color_Valid(t *testing.T) {
 }
 
 // Bad value must NOT mutate the field — mirrors CLI pre-extraction behavior.
+// The canary is "magenta": it is a plausible color word that is deliberately
+// NOT in the five-role highlight palette (purple/green/yellow/orange/red).
 func TestSetField_Color_Invalid(t *testing.T) {
 	inst := &Instance{Color: "#123456"}
-	_, _, err := SetField(inst, FieldColor, "red", nil)
+	_, _, err := SetField(inst, FieldColor, "magenta", nil)
 	if err == nil {
 		t.Fatal("expected error for invalid color, got nil")
 	}
@@ -273,8 +281,14 @@ func TestRestartPolicyFor(t *testing.T) {
 // Mirrors cmd-package coverage to ensure no permutations dropped during
 // the move from cmd/agent-deck/session_cmd.go to internal/session/.
 func TestIsValidSessionColor_Exported(t *testing.T) {
-	valid := []string{"", "#ff00aa", "#FF00AA", "#000000", "0", "255", "127"}
-	invalid := []string{"red", "#12", "#gggggg", "256", "-1", "  ", "#ff00aa00"}
+	valid := []string{
+		"", "#ff00aa", "#FF00AA", "#000000", "0", "255", "127",
+		"purple", "green", "yellow", "orange", "red",
+	}
+	invalid := []string{
+		"magenta", "#12", "#gggggg", "256", "-1", "  ", "#ff00aa00",
+		"blue", "cyan", "accent", "GREEN", "Purple",
+	}
 	for _, v := range valid {
 		if !IsValidSessionColor(v) {
 			t.Errorf("IsValidSessionColor(%q) = false, want true", v)
