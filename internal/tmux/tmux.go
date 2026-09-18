@@ -6801,6 +6801,7 @@ func (s *Session) NewShellWindow(workdir string) error {
 	} else {
 		args = append(args, shell)
 	}
+	// tmux-unbounded-ok: one-shot new-window creation, not a cadence command.
 	out, err := tmuxExec(s.SocketName, args...).Output()
 	if err != nil {
 		return err
