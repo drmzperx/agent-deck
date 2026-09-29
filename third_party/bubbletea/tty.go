@@ -81,6 +81,18 @@ func (p *Program) initCancelReader(cancel bool) error {
 		p.waitForReadLoop()
 	}
 
+	// agent-deck patch: close the reader being replaced. Upstream only cancels
+	// it, so every ReleaseTerminal/RestoreTerminal cycle (tea.Exec) leaked its
+	// epoll descriptor. Close only once its read loop has exited; a loop that
+	// is still blocked (waitForReadLoop timed out) keeps using it.
+	if p.cancelReader != nil && p.readLoopDone != nil {
+		select {
+		case <-p.readLoopDone:
+			_ = p.cancelReader.Close()
+		default:
+		}
+	}
+
 	var err error
 	p.cancelReader, err = newInputReader(p.input, p.mouseMode)
 	if err != nil {
