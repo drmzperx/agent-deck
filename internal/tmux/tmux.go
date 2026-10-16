@@ -5756,6 +5756,14 @@ func (s *Session) hasBusyIndicatorResolved(content string) bool {
 		// pane. Limiting to 3 lines prevents matching model-generated prose output
 		// that happens to contain the phrase (e.g. conductor status reports).
 		statusBarLines := lastNLines(content, 3)
+		if strings.EqualFold(tool, "claude") {
+			// A plugin that hides the spinner draws its own band, hint included,
+			// in the spinner's slot right above the composer; plugin status lines
+			// under the composer push it out of the 3-line window.
+			if line, ok := claudeLineAboveComposer(content); ok {
+				statusBarLines = append(statusBarLines, line)
+			}
+		}
 		for _, str := range patterns.BusyStrings {
 			lowerStr := strings.ToLower(str)
 			if !strings.Contains(lowerContent, lowerStr) {
@@ -5817,6 +5825,35 @@ func (s *Session) hasBusyIndicatorResolved(content string) bool {
 
 	statusLog.Debug("busy_no_spinner", slog.String("session", shortName))
 	return false
+}
+
+// claudeLineAboveComposer returns the first non-empty line above the current
+// framed composer (the "❯" prompt under its top border) when it starts flush at
+// column 0: the slot Claude draws its spinner in, and where a plugin that hides
+// the spinner draws its band. Transcript prose is indented or led by "●"/"⎿",
+// so it never qualifies.
+func claudeLineAboveComposer(content string) (string, bool) {
+	lines := lastNLines(content, 25)
+	for i := len(lines) - 1; i >= 2; i-- {
+		if prompt, _ := isClaudePromptLine(strings.TrimSpace(lines[i])); !prompt {
+			continue
+		}
+		if !strings.HasPrefix(strings.TrimSpace(lines[i-1]), "────") {
+			return "", false
+		}
+		for j := i - 2; j >= 0; j-- {
+			line := strings.TrimRight(lines[j], " \t")
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+			if line[0] == ' ' || line[0] == '\t' || strings.HasPrefix(line, "●") || strings.HasPrefix(line, "⎿") {
+				return "", false
+			}
+			return line, true
+		}
+		return "", false
+	}
+	return "", false
 }
 
 // hasPromptIndicator checks if the terminal shows a prompt waiting for user input.

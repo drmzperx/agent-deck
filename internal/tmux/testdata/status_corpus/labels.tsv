@@ -116,3 +116,5 @@ codex-idle-quoted-status-continuation	codex	waiting	SOURCE-DERIVED quoted prose 
 codex-idle-quoted-prose-last-line	codex	waiting	SOURCE-DERIVED quoted prose with idle composer
 codex-idle-historical-status-then-rule	codex	waiting	SOURCE-DERIVED quoted prose with idle composer
 codex-idle-ctrlc-prose	codex	waiting	SOURCE-DERIVED quoted prose with idle composer
+claude-plugin-band-busy-esc-cue	claude	active	haladas-sav plugin hides the spinner and draws its band (with the interrupt hint) right above the composer; a 4-row plugin status line below pushes the hint out of the last-3-line window
+claude-plugin-band-idle-no-cue	claude	waiting	haladas-sav band left up after the turn ended carries no interrupt hint

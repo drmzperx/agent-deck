@@ -1,0 +1,16 @@
+ ▐▛███▛█   Claude Code v2.1.301
+▝▜██████▀  Opus 5.5 with high effort · Claude Max
+ ▝▝   ▝▝   ~/workspace
+
+● x xxxxx-xx xxxxxxxx xxxxxxxx xxxxxxxx. xxxx xxxxxxxx, xxxxxx xxxx xx xxxxx-xxxx xxxxxxxxx.
+
+● xxxxxxxx x xxxxxxxxx xxxxxxxxx, xx xxxx xxxxxxx xxxxx:
+  x xxxx xxxxxxxxx „· esc to interrupt” xxxxxxx, xx xxxxxx · xxxxxx
+
+────────────────────────────────────────────────────────────────────────────────────────── dev ─
+❯ 
+──────────────────────────────────────────────────────────────────────────────────────────────────
+  Opus 5.5 | Context 11.0% | 5h 5.0% | 7d 36.0%
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents
+  Model Opus 5.5 · Ctx 10.9% · Cost $1.05 · Session 2m
+  5h 5.0% · Reset 3hr 58m · Weekly 36.0% · Reset 4d 3hr 48m
