@@ -4778,11 +4778,13 @@ func (s *Session) GetStatus() (string, error) {
 				return "active", nil
 			}
 
-			// Foreground turn ended by handing off to a background agent
-			// ("Waiting for N background agent to finish"): Claude resumes by
-			// itself, no spinner is drawn, so the busy check above misses it.
-			// Keep it green until the agent reports back. Background shells at
-			// the prompt are deliberately NOT in this rule (background_work.go).
+			// Foreground turn ended by handing off to background work (a
+			// workflow row short of its last step, "Waiting for N background
+			// agents to finish", or the footer's live shell count): Claude
+			// resumes by itself, no spinner is drawn, so the busy check above
+			// misses it. Keep it green until the work reports back. Passive
+			// watchers (Monitor, a sleep-only until loop) are not in this rule
+			// (BackgroundWork.Running, background_work.go).
 			if s.markBackgroundWorkActiveLocked(content, currentTS, shortName) {
 				return "active", nil
 			}
